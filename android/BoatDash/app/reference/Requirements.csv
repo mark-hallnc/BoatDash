@@ -1,0 +1,8 @@
+﻿Metric,Signal Source,Signal Hardware,Wire,Connectors,Resistors,Common Hardware,,,,,,,,,
+Fuel Consumption,Fuel flow sensor,,22 AWG,"Female-to-Male Dupont Jumper Wires, Automotive spade connectors (2 units)",10kΩ and 5.6kΩ (voltage divider for 5V pulses to 3.3V),Multiplexer: CD74HC4067 (for all analog sensors),,,,,,,,,
+Fuel Level %,Existing sender,Existing,22 AWG,"Automotive spade connectors (2 units), Female-to-Male Dupont Jumper Wires",10kΩ and 5.6kΩ (voltage divider),"Power: Micro USB Cable, 12V-to-5V Buck Converter",,,,,,,,,
+Trim Position,Existing sender,Existing,22 AWG,"Automotive spade connectors (2 units), Female-to-Male Dupont Jumper Wires",10kΩ and 5.6kΩ (voltage divider),"Connectors: Female Terminal Blocks (4-pin, 2 units) for GPIO/control lines",,,,,,,,,
+Bilge Water Level,SPST bilge float switch,,22 AWG,"Automotive spade connectors (2 units), Female-to-Male Dupont Jumper Wires",10kΩ (pull-up to 3.3V),,,,,,,,,,
+GPS Speed (MPH),GPS Module,,22 AWG,Female-to-Male Dupont Jumper Wires,"12V-to-5V Buck Converter, 20 AWG (red for 5V input)",,,,,,,,,,
+Tachometer (RPM),Existing signal,Existing,22 AWG,"Automotive spade connectors (2 units), Female-to-Male Dupont Jumper Wires",10kΩ and 5.6kΩ (voltage divider for 12V pulses to 3.3V),,,,,,,,,,
+Oil Pressure,Existing sender,Existing,22 AWG,"Automotive spade connectors (2 units), Female-to-Male Dupont Jumper Wires",10kΩ and 5.6kΩ (voltage divider),,,,,,,,,,
