@@ -4,24 +4,38 @@ import android.Manifest
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothSocket
+import android.content.Context
 import android.content.pm.PackageManager
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BluetoothConnected
-import androidx.compose.material.icons.filled.BluetoothDisabled
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -29,8 +43,9 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
-import com.example.boatapp.ui.theme.BoatAppTheme
+import com.example.boatapp.ui.theme.*
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlin.random.Random
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.Canvas
@@ -43,18 +58,28 @@ import kotlin.math.sin
 import java.io.IOException
 import java.util.UUID
 
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity(), LocationListener {
     private lateinit var bluetoothManager: BluetoothManager
     private var bluetoothAdapter: BluetoothAdapter? = null
-    private var bluetoothSocket: BluetoothSocket? = null
+    private var locationManager: LocationManager? = null
     
+    private val _locationState = mutableStateOf<Location?>(null)
+    private val _locationPermissionGranted = mutableStateOf(false)
+
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        // Handle permission results
-        if (permissions.all { it.value }) {
-            // All permissions granted, start Bluetooth discovery
+        val btGranted = permissions[Manifest.permission.BLUETOOTH_CONNECT] == true
+        val locGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
+        
+        _locationPermissionGranted.value = locGranted
+        
+        if (btGranted) {
             bluetoothManager.startDiscovery()
+        }
+        
+        if (locGranted) {
+            startLocationUpdates()
         }
     }
     
@@ -62,27 +87,26 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         
-        // Initialize Bluetooth Manager
+        // Initialize Managers
         bluetoothManager = BluetoothManager(this)
         bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
+        locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         
         // Request permissions
-        requestBluetoothPermissions()
+        requestPermissions()
         
         setContent {
             BoatAppTheme {
                 BoatDashboard(
                     bluetoothManager = bluetoothManager,
-                    onConnectBluetooth = { device ->
-                        // Connect to selected device
-                        // This will be handled in the composable
-                    }
+                    location = _locationState.value,
+                    locationPermissionGranted = _locationPermissionGranted.value
                 )
             }
         }
     }
     
-    private fun requestBluetoothPermissions() {
+    private fun requestPermissions() {
         val permissions = arrayOf(
             Manifest.permission.BLUETOOTH,
             Manifest.permission.BLUETOOTH_ADMIN,
@@ -93,472 +117,503 @@ class MainActivity : ComponentActivity() {
         )
         requestPermissionLauncher.launch(permissions)
     }
+
+    private fun startLocationUpdates() {
+        if (ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED || ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
+            locationManager?.requestLocationUpdates(
+                LocationManager.GPS_PROVIDER,
+                5000L,
+                5f,
+                this
+            )
+            // Also try to get last known location
+            val lastKnown = locationManager?.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+            if (lastKnown != null) {
+                _locationState.value = lastKnown
+            }
+        }
+    }
+
+    override fun onLocationChanged(location: Location) {
+        _locationState.value = location
+    }
+
+    override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+    override fun onProviderEnabled(provider: String) {}
+    override fun onProviderDisabled(provider: String) {}
+
+    override fun onDestroy() {
+        super.onDestroy()
+        locationManager?.removeUpdates(this)
+    }
 }
 
 @Composable
 fun BoatDashboard(
     bluetoothManager: BluetoothManager,
-    onConnectBluetooth: (BluetoothDevice) -> Unit = {}
+    location: Location? = null,
+    locationPermissionGranted: Boolean = false
 ) {
-    var fuelConsumption by remember { mutableStateOf(0f) }
-    var fuelLevel by remember { mutableStateOf(85f) }
-    var trimPosition by remember { mutableStateOf(2) }
-    var bilgeWaterLevel by remember { mutableStateOf("Normal") }
-    var speed by remember { mutableStateOf(0f) }
-    var rpms by remember { mutableStateOf(800) }
-    var oilPressure by remember { mutableStateOf(15f) }
-    var isBluetoothConnected by remember { mutableStateOf(false) }
+    val sensorData by bluetoothManager.sensorData.collectAsState()
+    val isConnected by bluetoothManager.isConnected.collectAsState()
+    val isScanning by bluetoothManager.isScanning.collectAsState()
 
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(1000)
-            
-            rpms = when {
-                Random.nextFloat() < 0.1f -> 800
-                Random.nextFloat() < 0.3f -> Random.nextInt(1200, 2000)
-                Random.nextFloat() < 0.6f -> Random.nextInt(2000, 3500)
-                else -> Random.nextInt(3500, 4200)
+    val configuration = LocalConfiguration.current
+    val isTablet = configuration.screenWidthDp >= 600
+
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            DashboardHeader(
+                isConnected = isConnected,
+                isScanning = isScanning,
+                location = location,
+                locationPermissionGranted = locationPermissionGranted
+            )
+        }
+    ) { paddingValues ->
+        LazyVerticalGrid(
+            columns = if (isTablet) GridCells.Fixed(3) else GridCells.Fixed(1),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Prominent Speed Card
+            item(span = { GridItemSpan(if (isTablet) 2 else 1) }) {
+                ProminentStatCard(
+                    title = "SPEED",
+                    value = String.format("%.1f", sensorData.speed),
+                    unit = "MPH",
+                    icon = Icons.Default.Speed,
+                    accentColor = MaterialTheme.colorScheme.primary,
+                    progress = (sensorData.speed / 50f).coerceIn(0f, 1f)
+                )
             }
-            
-            speed = (rpms * 0.01f) + Random.nextFloat() * 5f - 2.5f
-            speed = speed.coerceIn(0f, 45f)
-            
-            oilPressure = (rpms * 0.008f) + Random.nextFloat() * 8f - 4f
-            oilPressure = oilPressure.coerceIn(10f, 60f)
-            
-            val fuelBurnRate = (rpms * 0.0001f) + Random.nextFloat() * 0.5f
-            fuelConsumption += fuelBurnRate
-            
-            fuelLevel -= Random.nextFloat() * 0.02f
-            fuelLevel = fuelLevel.coerceIn(5f, 100f)
-            
-            if (Random.nextFloat() < 0.05f) {
-                trimPosition = Random.nextInt(1, 6)
+
+            // Prominent RPM Card
+            item(span = { GridItemSpan(1) }) {
+                ProminentStatCard(
+                    title = "RPM",
+                    value = "${sensorData.rpms}",
+                    unit = "",
+                    icon = Icons.Default.Cyclone,
+                    accentColor = MaterialTheme.colorScheme.secondary,
+                    progress = (sensorData.rpms / 5000f).coerceIn(0f, 1f)
+                )
             }
-            
-            if (Random.nextFloat() < 0.02f) {
-                bilgeWaterLevel = "High"
-            } else if (Random.nextFloat() < 0.1f) {
-                bilgeWaterLevel = "Normal"
+
+            // Fuel Level Card
+            item {
+                StatCard(
+                    title = "FUEL LEVEL",
+                    value = "${sensorData.fuelLevel.toInt()}",
+                    unit = "%",
+                    icon = Icons.Default.LocalGasStation,
+                    accentColor = if (sensorData.fuelLevel < 20f) WarningOrange else MaterialTheme.colorScheme.tertiary,
+                    showProgress = true,
+                    progress = sensorData.fuelLevel / 100f
+                )
+            }
+
+            // Fuel Consumption Card
+            item {
+                StatCard(
+                    title = "FUEL RATE",
+                    value = String.format("%.1f", sensorData.fuelConsumption),
+                    unit = "GPH",
+                    icon = Icons.Default.PropaneTank,
+                    accentColor = MaterialTheme.colorScheme.secondary
+                )
+            }
+
+            // Oil Pressure Card
+            item {
+                StatCard(
+                    title = "OIL PRESSURE",
+                    value = "${sensorData.oilPressure.toInt()}",
+                    unit = "PSI",
+                    icon = Icons.Default.OilBarrel,
+                    accentColor = if (sensorData.oilPressure < 20f) WarningRed else SuccessGreen
+                )
+            }
+
+            // Trim Position Card
+            item {
+                TrimCard(
+                    trimPosition = sensorData.trimPosition,
+                    accentColor = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            // Bilge Status Card
+            item {
+                BilgeCard(
+                    status = sensorData.bilgeWaterLevel,
+                    isHigh = sensorData.bilgeWaterLevel == "High"
+                )
             }
         }
     }
+}
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFF1a1a2e))
+@Composable
+fun DashboardHeader(
+    isConnected: Boolean,
+    isScanning: Boolean,
+    location: Location?,
+    locationPermissionGranted: Boolean
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        modifier = Modifier.shadow(4.dp)
     ) {
-        Column(
+        Row(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp)
-                .navigationBarsPadding()
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(horizontal = 24.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // Header with Bluetooth indicator
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .clip(CircleShape)
+                            .background(if (isConnected) SuccessGreen else WarningRed)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "BoatDash",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Black,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                Text(
+                    text = "Live boat telemetry",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.7f)
+                )
+            }
+
+            Column(horizontalAlignment = Alignment.End) {
+                BluetoothStatusPill(isConnected = isConnected, isScanning = isScanning)
+                Spacer(modifier = Modifier.height(8.dp))
+                LocationDisplay(location = location, permissionGranted = locationPermissionGranted)
+            }
+        }
+    }
+}
+
+@Composable
+fun BluetoothStatusPill(isConnected: Boolean, isScanning: Boolean) {
+    val backgroundColor by animateColorAsState(
+        targetValue = when {
+            isConnected -> SuccessGreen.copy(alpha = 0.1f)
+            isScanning -> WarningOrange.copy(alpha = 0.1f)
+            else -> WarningRed.copy(alpha = 0.1f)
+        }, label = "bg"
+    )
+    val contentColor by animateColorAsState(
+        targetValue = when {
+            isConnected -> SuccessGreen
+            isScanning -> WarningOrange
+            else -> WarningRed
+        }, label = "content"
+    )
+
+    Surface(
+        color = backgroundColor,
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, contentColor.copy(alpha = 0.3f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = if (isConnected) Icons.Default.BluetoothConnected else Icons.Default.BluetoothDisabled,
+                contentDescription = null,
+                tint = contentColor,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = when {
+                    isConnected -> "Connected"
+                    isScanning -> "Scanning..."
+                    else -> "Disconnected"
+                },
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = contentColor
+            )
+        }
+    }
+}
+
+@Composable
+fun LocationDisplay(location: Location?, permissionGranted: Boolean) {
+    val text = when {
+        !permissionGranted -> "Location permission needed"
+        location == null -> "GPS searching..."
+        else -> String.format("Location: %.4f, %.4f", location.latitude, location.longitude)
+    }
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            imageVector = Icons.Default.LocationOn,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.secondary,
+            modifier = Modifier.size(14.dp)
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.secondary
+        )
+    }
+}
+
+@Composable
+fun ProminentStatCard(
+    title: String,
+    value: String,
+    unit: String,
+    icon: ImageVector,
+    accentColor: Color,
+    progress: Float
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(modifier = Modifier.padding(24.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "BOAT SYSTEMS MONITOR",
-                    fontSize = 32.sp,
+                    text = title,
+                    style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.weight(1f)
+                    color = MaterialTheme.colorScheme.secondary
                 )
-                
-                // Bluetooth connection indicator
-                BluetoothConnectionIndicator(
-                    isConnected = isBluetoothConnected,
-                    modifier = Modifier.padding(start = 16.dp)
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = accentColor.copy(alpha = 0.6f)
                 )
             }
             
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(16.dp))
             
-            // Prominent Speed Display with weight
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1.2f),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF16213e)),
-                elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.displayLarge,
+                    fontWeight = FontWeight.Black,
+                    color = accentColor,
+                    fontSize = 64.sp
+                )
+                if (unit.isNotEmpty()) {
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "SPEED",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Row(
-                        verticalAlignment = Alignment.Bottom,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        Text(
-                            text = "${speed.toInt()}",
-                            fontSize = 44.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFFE91E63)
-                        )
-                        Text(
-                            text = " MPH",
-                            fontSize = 20.sp,
-                            color = Color.White.copy(alpha = 0.7f)
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    LinearProgressIndicator(
-                        progress = (speed / 50f).coerceIn(0f, 1f),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(6.dp)
-                            .clip(RoundedCornerShape(3.dp)),
-                        color = Color(0xFFE91E63),
-                        trackColor = Color.White.copy(alpha = 0.2f)
+                        text = unit,
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f),
+                        modifier = Modifier.padding(bottom = 12.dp)
                     )
                 }
             }
-            Spacer(modifier = Modifier.height(12.dp))
-            Row(
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            LinearProgressIndicator(
+                progress = progress,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(2f),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    DashboardGauge(
-                        title = "FUEL CONSUMPTION",
-                        value = "${fuelConsumption.toInt()}",
-                        unit = "GPH",
-                        color = Color(0xFF4CAF50),
-                        maxValue = 20f,
-                        currentValue = fuelConsumption,
-                        modifier = Modifier.weight(1f)
-                    )
-                    DashboardGauge(
-                        title = "FUEL LEVEL",
-                        value = "${fuelLevel.toInt()}",
-                        unit = "%",
-                        color = Color(0xFFFF9800),
-                        maxValue = 100f,
-                        currentValue = fuelLevel,
-                        modifier = Modifier.weight(1f)
-                    )
-                    TrimGauge(
-                        title = "TRIM POSITION",
-                        trimPosition = trimPosition,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    DashboardGauge(
-                        title = "RPM",
-                        value = "$rpms",
-                        unit = "",
-                        color = Color(0xFF9C27B0),
-                        maxValue = 5000f,
-                        currentValue = rpms.toFloat(),
-                        modifier = Modifier.weight(1f)
-                    )
-                    DashboardGauge(
-                        title = "OIL PRESSURE",
-                        value = "${oilPressure.toInt()}",
-                        unit = "PSI",
-                        color = Color(0xFFFF5722),
-                        maxValue = 80f,
-                        currentValue = oilPressure,
-                        modifier = Modifier.weight(1f)
-                    )
-                    BilgeStatusCard(
-                        title = "BILGE WATER LEVEL",
-                        status = bilgeWaterLevel,
-                        isHigh = bilgeWaterLevel == "High",
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
+                    .height(8.dp)
+                    .clip(CircleShape),
+                color = accentColor,
+                trackColor = accentColor.copy(alpha = 0.1f)
+            )
         }
     }
 }
 
 @Composable
-fun DashboardGauge(
+fun StatCard(
     title: String,
     value: String,
     unit: String,
-    color: Color,
-    maxValue: Float,
-    currentValue: Float,
-    modifier: Modifier = Modifier
+    icon: ImageVector,
+    accentColor: Color,
+    showProgress: Boolean = false,
+    progress: Float = 0f
 ) {
     Card(
-        modifier = modifier
-            .fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF16213e)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(16.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Text(
-                text = title,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Row(
-                verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.Center
-            ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = accentColor,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            Row(verticalAlignment = Alignment.Bottom) {
                 Text(
                     text = value,
-                    fontSize = 22.sp,
+                    style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.Bold,
-                    color = color
+                    color = MaterialTheme.colorScheme.primary
                 )
                 if (unit.isNotEmpty()) {
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = " $unit",
-                        fontSize = 13.sp,
-                        color = Color.White.copy(alpha = 0.7f)
+                        text = unit,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f)
                     )
                 }
             }
-            Spacer(modifier = Modifier.height(4.dp))
-            LinearProgressIndicator(
-                progress = (currentValue / maxValue).coerceIn(0f, 1f),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(5.dp)
-                    .clip(RoundedCornerShape(2.dp)),
-                color = color,
-                trackColor = Color.White.copy(alpha = 0.2f)
-            )
+            
+            if (showProgress) {
+                Spacer(modifier = Modifier.height(12.dp))
+                LinearProgressIndicator(
+                    progress = progress,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(CircleShape),
+                    color = accentColor,
+                    trackColor = accentColor.copy(alpha = 0.1f)
+                )
+            }
         }
     }
 }
 
 @Composable
-fun BilgeStatusCard(
-    title: String,
-    status: String,
-    isHigh: Boolean,
-    modifier: Modifier = Modifier
-) {
+fun TrimCard(trimPosition: Int, accentColor: Color) {
     Card(
-        modifier = modifier
-            .fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isHigh) Color(0xFFD32F2F) else Color(0xFF16213e)
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(16.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
+        Column(modifier = Modifier.padding(20.dp)) {
             Text(
-                text = title,
-                fontSize = 13.sp,
+                text = "TRIM POSITION",
+                style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
-                color = Color.White,
-                textAlign = TextAlign.Center
+                color = MaterialTheme.colorScheme.secondary
             )
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(12.dp))
             Text(
-                text = status,
-                fontSize = 22.sp,
+                text = "Position $trimPosition",
+                style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
-                color = if (isHigh) Color.White else Color(0xFF4CAF50),
-                textAlign = TextAlign.Center
+                color = accentColor
             )
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            // Simple visual representation of trim
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                for (i in 1..5) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(8.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (i <= trimPosition) accentColor else accentColor.copy(alpha = 0.1f)
+                            )
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun BilgeCard(status: String, isHigh: Boolean) {
+    val backgroundColor = if (isHigh) WarningRed.copy(alpha = 0.1f) else SuccessGreen.copy(alpha = 0.05f)
+    val contentColor = if (isHigh) WarningRed else SuccessGreen
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(16.dp),
+        border = if (isHigh) BorderStroke(1.dp, WarningRed.copy(alpha = 0.5f)) else null
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Text(
+                text = "BILGE WATER",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.secondary
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    modifier = Modifier.size(12.dp),
+                    shape = CircleShape,
+                    color = contentColor
+                ) {}
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = status.uppercase(),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Black,
+                    color = contentColor
+                )
+            }
             if (isHigh) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "WARNING!",
-                    fontSize = 11.sp,
+                    text = "DANGER: HIGH WATER",
+                    style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    textAlign = TextAlign.Center
+                    color = WarningRed
                 )
             }
-        }
-    }
-}
-
-@Composable
-fun TrimGauge(
-    title: String,
-    trimPosition: Int,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        modifier = modifier
-            .fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF16213e)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Text(
-                text = title,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Vertical gauge with needle
-            Box(
-                modifier = Modifier
-                    .size(80.dp, 60.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Canvas(
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    val centerX = size.width / 2
-                    val centerY = size.height / 2
-                    val gaugeRadius = minOf(size.width, size.height) * 0.35f
-
-                    // Draw gauge arc (vertical)
-                    drawArc(
-                        color = Color.White.copy(alpha = 0.3f),
-                        startAngle = -90f,
-                        sweepAngle = 180f,
-                        useCenter = false,
-                        topLeft = Offset(centerX - gaugeRadius, centerY - gaugeRadius),
-                        size = androidx.compose.ui.geometry.Size(gaugeRadius * 2, gaugeRadius * 2),
-                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round)
-                    )
-
-                    // Draw trim position markers
-                    for (i in 1..5) {
-                        val angle = -90f + (i - 1) * 45f // Spread markers evenly
-                        val markerRadius = gaugeRadius + 8.dp.toPx()
-                        val markerX = centerX + cos(Math.toRadians(angle.toDouble())).toFloat() * markerRadius
-                        val markerY = centerY + sin(Math.toRadians(angle.toDouble())).toFloat() * markerRadius
-
-                        drawCircle(
-                            color = if (i == trimPosition) Color(0xFF2196F3) else Color.White.copy(alpha = 0.5f),
-                            radius = 3.dp.toPx(),
-                            center = Offset(markerX, markerY)
-                        )
-                    }
-
-                    // Draw needle
-                    val needleAngle = -90f + (trimPosition - 1) * 45f
-                    rotate(needleAngle, Offset(centerX, centerY)) {
-                        // Needle shaft
-                        drawLine(
-                            color = Color(0xFF2196F3),
-                            start = Offset(centerX, centerY - gaugeRadius + 8.dp.toPx()),
-                            end = Offset(centerX, centerY + 8.dp.toPx()),
-                            strokeWidth = 3.dp.toPx(),
-                            cap = StrokeCap.Round
-                        )
-                        // Needle tip
-                        drawLine(
-                            color = Color(0xFF2196F3),
-                            start = Offset(centerX, centerY - gaugeRadius + 8.dp.toPx()),
-                            end = Offset(centerX, centerY - gaugeRadius - 4.dp.toPx()),
-                            strokeWidth = 4.dp.toPx(),
-                            cap = StrokeCap.Round
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            // Trim position labels
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "DOWN",
-                    fontSize = 10.sp,
-                    color = Color.White.copy(alpha = 0.7f),
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "UP",
-                    fontSize = 10.sp,
-                    color = Color.White.copy(alpha = 0.7f),
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            // Current position indicator
-            Text(
-                text = "Position $trimPosition",
-                fontSize = 12.sp,
-                color = Color(0xFF2196F3),
-                fontWeight = FontWeight.Bold
-            )
-        }
-    }
-}
-
-@Composable
-fun BluetoothConnectionIndicator(
-    isConnected: Boolean,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        modifier = modifier.size(48.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isConnected) Color(0xFF4CAF50) else Color(0xFF666666)
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-    ) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "BT",
-                color = Color.White,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold
-            )
         }
     }
 }
@@ -567,9 +622,8 @@ fun BluetoothConnectionIndicator(
     showBackground = true,
     widthDp = 1280,
     heightDp = 800,
-    name = "Landscape",
-    device =
-        "spec:width=1280,height=800,unit=dp,orientation=landscape"
+    name = "Landscape Tablet",
+    device = "spec:width=1280,height=800,unit=dp,orientation=landscape"
 )
 @Composable
 fun BoatDashboardPreview() {
@@ -577,4 +631,5 @@ fun BoatDashboardPreview() {
         BoatDashboard(bluetoothManager = BluetoothManager(LocalContext.current))
     }
 }
+
 

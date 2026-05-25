@@ -44,7 +44,7 @@ dependencies {
     implementation("androidx.compose.runtime:runtime:1.8.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("androidx.compose.runtime:runtime:1.6.7")
-    implementation("androidx.compose.material:material-icons-extended:<version>")
+    implementation("androidx.compose.material:material-icons-extended:1.7.8")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
