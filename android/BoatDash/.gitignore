@@ -13,3 +13,37 @@
 .externalNativeBuild
 .cxx
 local.properties
+# Android / Gradle
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+android/*.iml
+android/app/*.iml
+
+# Android Studio generated
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Gradle
+.gradle/
+build/
+
+# Arduino / PlatformIO / temp files
+arduino/build/
+arduino/.vscode/
+*.hex
+*.elf
+*.bin
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Temp files
+*.tmp
+*.log
+.tmp.driveupload/

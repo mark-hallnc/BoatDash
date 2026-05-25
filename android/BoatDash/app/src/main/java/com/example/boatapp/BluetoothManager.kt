@@ -17,16 +17,6 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.util.UUID
 
-data class SensorData(
-    val fuelConsumption: Float = 0f,
-    val fuelLevel: Float = 85f,
-    val trimPosition: Int = 2,
-    val bilgeWaterLevel: String = "Normal",
-    val speed: Float = 0f,
-    val rpms: Int = 800,
-    val oilPressure: Float = 15f
-)
-
 class BluetoothManager(private val context: Context) {
     
     private val bluetoothAdapter: BluetoothAdapter? = BluetoothAdapter.getDefaultAdapter()
@@ -131,7 +121,7 @@ class BluetoothManager(private val context: Context) {
         try {
             // Expected format from ESP32: "FUEL:12.5,LEVEL:75,TRIM:3,SPEED:25,RPM:3200,OIL:45,BILGE:NORMAL"
             val pairs = data.split(",")
-            val newSensorData = _sensorData.value.copy()
+            var currentSensorData = _sensorData.value
             
             pairs.forEach { pair ->
                 val keyValue = pair.split(":")
@@ -139,17 +129,19 @@ class BluetoothManager(private val context: Context) {
                     val key = keyValue[0].trim()
                     val value = keyValue[1].trim()
                     
-                    when (key.uppercase()) {
-                        "FUEL" -> newSensorData.copy(fuelConsumption = value.toFloatOrNull() ?: 0f)
-                        "LEVEL" -> newSensorData.copy(fuelLevel = value.toFloatOrNull() ?: 85f)
-                        "TRIM" -> newSensorData.copy(trimPosition = value.toIntOrNull() ?: 2)
-                        "SPEED" -> newSensorData.copy(speed = value.toFloatOrNull() ?: 0f)
-                        "RPM" -> newSensorData.copy(rpms = value.toIntOrNull() ?: 800)
-                        "OIL" -> newSensorData.copy(oilPressure = value.toFloatOrNull() ?: 15f)
-                        "BILGE" -> newSensorData.copy(bilgeWaterLevel = value.uppercase())
-                    }.let { _sensorData.value = it }
+                    currentSensorData = when (key.uppercase()) {
+                        "FUEL" -> currentSensorData.copy(fuelConsumption = value.toFloatOrNull() ?: 0f)
+                        "LEVEL" -> currentSensorData.copy(fuelLevel = value.toFloatOrNull() ?: 85f)
+                        "TRIM" -> currentSensorData.copy(trimPosition = value.toIntOrNull() ?: 2)
+                        "SPEED" -> currentSensorData.copy(speed = value.toFloatOrNull() ?: 0f)
+                        "RPM" -> currentSensorData.copy(rpms = value.toIntOrNull() ?: 800)
+                        "OIL" -> currentSensorData.copy(oilPressure = value.toFloatOrNull() ?: 15f)
+                        "BILGE" -> currentSensorData.copy(bilgeWaterLevel = value.uppercase())
+                        else -> currentSensorData
+                    }
                 }
             }
+            _sensorData.value = currentSensorData
         } catch (e: Exception) {
             e.printStackTrace()
         }

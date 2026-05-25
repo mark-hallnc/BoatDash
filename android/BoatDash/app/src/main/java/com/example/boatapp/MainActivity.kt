@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -41,7 +42,6 @@ import kotlin.math.cos
 import kotlin.math.sin
 import java.io.IOException
 import java.util.UUID
-import android.bluetooth.BluetoothManager
 
 class MainActivity : ComponentActivity() {
     private lateinit var bluetoothManager: BluetoothManager
@@ -574,7 +574,7 @@ fun BluetoothConnectionIndicator(
 @Composable
 fun BoatDashboardPreview() {
     BoatAppTheme {
-        BoatDashboard()
+        BoatDashboard(bluetoothManager = BluetoothManager(LocalContext.current))
     }
 }
 
