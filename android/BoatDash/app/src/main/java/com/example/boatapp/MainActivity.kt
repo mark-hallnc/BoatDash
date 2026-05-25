@@ -167,6 +167,14 @@ fun BoatDashboard(
 
     val configuration = LocalConfiguration.current
     val isTablet = configuration.screenWidthDp >= 600
+    val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+
+    // Calculate GPS speed in MPH
+    val gpsSpeedMph = if (location != null && location.hasSpeed()) {
+        location.speed * 2.23694f
+    } else {
+        0f
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -184,19 +192,20 @@ fun BoatDashboard(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(horizontal = 16.dp, vertical = if (isLandscape) 8.dp else 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             // Prominent Speed Card
             item(span = { GridItemSpan(if (isTablet) 2 else 1) }) {
                 ProminentStatCard(
-                    title = "SPEED",
-                    value = String.format("%.1f", sensorData.speed),
+                    title = "SPEED (GPS)",
+                    value = String.format("%.1f", gpsSpeedMph),
                     unit = "MPH",
                     icon = Icons.Default.Speed,
                     accentColor = MaterialTheme.colorScheme.primary,
-                    progress = (sensorData.speed / 50f).coerceIn(0f, 1f)
+                    progress = (gpsSpeedMph / 50f).coerceIn(0f, 1f),
+                    compact = isLandscape && isTablet
                 )
             }
 
@@ -208,7 +217,8 @@ fun BoatDashboard(
                     unit = "",
                     icon = Icons.Default.Cyclone,
                     accentColor = MaterialTheme.colorScheme.secondary,
-                    progress = (sensorData.rpms / 5000f).coerceIn(0f, 1f)
+                    progress = (sensorData.rpms / 5000f).coerceIn(0f, 1f),
+                    compact = isLandscape && isTablet
                 )
             }
 
@@ -221,7 +231,8 @@ fun BoatDashboard(
                     icon = Icons.Default.LocalGasStation,
                     accentColor = if (sensorData.fuelLevel < 20f) WarningOrange else MaterialTheme.colorScheme.tertiary,
                     showProgress = true,
-                    progress = sensorData.fuelLevel / 100f
+                    progress = sensorData.fuelLevel / 100f,
+                    compact = isLandscape && isTablet
                 )
             }
 
@@ -232,7 +243,8 @@ fun BoatDashboard(
                     value = String.format("%.1f", sensorData.fuelConsumption),
                     unit = "GPH",
                     icon = Icons.Default.PropaneTank,
-                    accentColor = MaterialTheme.colorScheme.secondary
+                    accentColor = MaterialTheme.colorScheme.secondary,
+                    compact = isLandscape && isTablet
                 )
             }
 
@@ -243,7 +255,8 @@ fun BoatDashboard(
                     value = "${sensorData.oilPressure.toInt()}",
                     unit = "PSI",
                     icon = Icons.Default.OilBarrel,
-                    accentColor = if (sensorData.oilPressure < 20f) WarningRed else SuccessGreen
+                    accentColor = if (sensorData.oilPressure < 20f) WarningRed else SuccessGreen,
+                    compact = isLandscape && isTablet
                 )
             }
 
@@ -251,7 +264,8 @@ fun BoatDashboard(
             item {
                 TrimCard(
                     trimPosition = sensorData.trimPosition,
-                    accentColor = MaterialTheme.colorScheme.primary
+                    accentColor = MaterialTheme.colorScheme.primary,
+                    compact = isLandscape && isTablet
                 )
             }
 
@@ -259,7 +273,8 @@ fun BoatDashboard(
             item {
                 BilgeCard(
                     status = sensorData.bilgeWaterLevel,
-                    isHigh = sensorData.bilgeWaterLevel == "High"
+                    isHigh = sensorData.bilgeWaterLevel == "High",
+                    compact = isLandscape && isTablet
                 )
             }
         }
@@ -273,15 +288,21 @@ fun DashboardHeader(
     location: Location?,
     locationPermissionGranted: Boolean
 ) {
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+
     Surface(
         color = MaterialTheme.colorScheme.surface,
-        modifier = Modifier.shadow(4.dp)
+        modifier = Modifier.shadow(2.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
-                .padding(horizontal = 24.dp, vertical = 16.dp),
+                .padding(
+                    horizontal = if (isLandscape) 16.dp else 24.dp,
+                    vertical = if (isLandscape) 8.dp else 16.dp
+                ),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
@@ -289,28 +310,28 @@ fun DashboardHeader(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
-                            .size(10.dp)
+                            .size(if (isLandscape) 8.dp else 10.dp)
                             .clip(CircleShape)
                             .background(if (isConnected) SuccessGreen else WarningRed)
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(if (isLandscape) 6.dp else 8.dp))
                     Text(
                         text = "BoatDash",
-                        style = MaterialTheme.typography.headlineMedium,
+                        style = if (isLandscape) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Black,
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
                 Text(
                     text = "Live boat telemetry",
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = if (isLandscape) MaterialTheme.typography.labelSmall else MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.7f)
                 )
             }
 
             Column(horizontalAlignment = Alignment.End) {
                 BluetoothStatusPill(isConnected = isConnected, isScanning = isScanning)
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(if (isLandscape) 4.dp else 8.dp))
                 LocationDisplay(location = location, permissionGranted = locationPermissionGranted)
             }
         }
@@ -395,7 +416,8 @@ fun ProminentStatCard(
     unit: String,
     icon: ImageVector,
     accentColor: Color,
-    progress: Float
+    progress: Float,
+    compact: Boolean = false
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -403,7 +425,7 @@ fun ProminentStatCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         shape = RoundedCornerShape(16.dp)
     ) {
-        Column(modifier = Modifier.padding(24.dp)) {
+        Column(modifier = Modifier.padding(if (compact) 16.dp else 24.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -411,45 +433,46 @@ fun ProminentStatCard(
             ) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.labelLarge,
+                    style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.secondary
                 )
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = accentColor.copy(alpha = 0.6f)
+                    tint = accentColor.copy(alpha = 0.6f),
+                    modifier = if (compact) Modifier.size(20.dp) else Modifier
                 )
             }
             
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(if (compact) 8.dp else 16.dp))
             
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(
                     text = value,
-                    style = MaterialTheme.typography.displayLarge,
+                    style = if (compact) MaterialTheme.typography.displayMedium else MaterialTheme.typography.displayLarge,
                     fontWeight = FontWeight.Black,
                     color = accentColor,
-                    fontSize = 64.sp
+                    fontSize = if (compact) 48.sp else 64.sp
                 )
                 if (unit.isNotEmpty()) {
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(if (compact) 4.dp else 8.dp))
                     Text(
                         text = unit,
-                        style = MaterialTheme.typography.headlineSmall,
+                        style = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.headlineSmall,
                         color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f),
-                        modifier = Modifier.padding(bottom = 12.dp)
+                        modifier = Modifier.padding(bottom = if (compact) 8.dp else 12.dp)
                     )
                 }
             }
             
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(if (compact) 8.dp else 16.dp))
             
             LinearProgressIndicator(
                 progress = progress,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(8.dp)
+                    .height(if (compact) 6.dp else 8.dp)
                     .clip(CircleShape),
                 color = accentColor,
                 trackColor = accentColor.copy(alpha = 0.1f)
@@ -466,7 +489,8 @@ fun StatCard(
     icon: ImageVector,
     accentColor: Color,
     showProgress: Boolean = false,
-    progress: Float = 0f
+    progress: Float = 0f,
+    compact: Boolean = false
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -474,49 +498,49 @@ fun StatCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         shape = RoundedCornerShape(16.dp)
     ) {
-        Column(modifier = Modifier.padding(20.dp)) {
+        Column(modifier = Modifier.padding(if (compact) 12.dp else 20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
                     tint = accentColor,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(if (compact) 16.dp else 20.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.labelMedium,
+                    style = if (compact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.secondary
                 )
             }
             
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(if (compact) 4.dp else 12.dp))
             
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(
                     text = value,
-                    style = MaterialTheme.typography.headlineLarge,
+                    style = if (compact) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
                 )
                 if (unit.isNotEmpty()) {
-                    Spacer(modifier = Modifier.width(4.dp))
+                    Spacer(modifier = Modifier.width(if (compact) 2.dp else 4.dp))
                     Text(
                         text = unit,
-                        style = MaterialTheme.typography.bodyLarge,
+                        style = if (compact) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f)
                     )
                 }
             }
             
             if (showProgress) {
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(if (compact) 4.dp else 12.dp))
                 LinearProgressIndicator(
                     progress = progress,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(6.dp)
+                        .height(if (compact) 4.dp else 6.dp)
                         .clip(CircleShape),
                     color = accentColor,
                     trackColor = accentColor.copy(alpha = 0.1f)
@@ -527,28 +551,28 @@ fun StatCard(
 }
 
 @Composable
-fun TrimCard(trimPosition: Int, accentColor: Color) {
+fun TrimCard(trimPosition: Int, accentColor: Color, compact: Boolean = false) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         shape = RoundedCornerShape(16.dp)
     ) {
-        Column(modifier = Modifier.padding(20.dp)) {
+        Column(modifier = Modifier.padding(if (compact) 12.dp else 20.dp)) {
             Text(
                 text = "TRIM POSITION",
-                style = MaterialTheme.typography.labelMedium,
+                style = if (compact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.secondary
             )
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(if (compact) 4.dp else 12.dp))
             Text(
                 text = "Position $trimPosition",
-                style = MaterialTheme.typography.headlineMedium,
+                style = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = accentColor
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(if (compact) 4.dp else 8.dp))
             
             // Simple visual representation of trim
             Row(
@@ -559,7 +583,7 @@ fun TrimCard(trimPosition: Int, accentColor: Color) {
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .height(8.dp)
+                            .height(if (compact) 6.dp else 8.dp)
                             .clip(CircleShape)
                             .background(
                                 if (i <= trimPosition) accentColor else accentColor.copy(alpha = 0.1f)
@@ -572,8 +596,7 @@ fun TrimCard(trimPosition: Int, accentColor: Color) {
 }
 
 @Composable
-fun BilgeCard(status: String, isHigh: Boolean) {
-    val backgroundColor = if (isHigh) WarningRed.copy(alpha = 0.1f) else SuccessGreen.copy(alpha = 0.05f)
+fun BilgeCard(status: String, isHigh: Boolean, compact: Boolean = false) {
     val contentColor = if (isHigh) WarningRed else SuccessGreen
 
     Card(
@@ -583,30 +606,30 @@ fun BilgeCard(status: String, isHigh: Boolean) {
         shape = RoundedCornerShape(16.dp),
         border = if (isHigh) BorderStroke(1.dp, WarningRed.copy(alpha = 0.5f)) else null
     ) {
-        Column(modifier = Modifier.padding(20.dp)) {
+        Column(modifier = Modifier.padding(if (compact) 12.dp else 20.dp)) {
             Text(
                 text = "BILGE WATER",
-                style = MaterialTheme.typography.labelMedium,
+                style = if (compact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.secondary
             )
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(if (compact) 4.dp else 12.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
-                    modifier = Modifier.size(12.dp),
+                    modifier = Modifier.size(if (compact) 8.dp else 12.dp),
                     shape = CircleShape,
                     color = contentColor
                 ) {}
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(if (compact) 6.dp else 12.dp))
                 Text(
                     text = status.uppercase(),
-                    style = MaterialTheme.typography.headlineSmall,
+                    style = if (compact) MaterialTheme.typography.titleSmall else MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Black,
                     color = contentColor
                 )
             }
             if (isHigh) {
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(if (compact) 2.dp else 4.dp))
                 Text(
                     text = "DANGER: HIGH WATER",
                     style = MaterialTheme.typography.labelSmall,
