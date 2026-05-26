@@ -63,6 +63,7 @@ import java.util.UUID
 class MainActivity : ComponentActivity(), LocationListener {
     private lateinit var bluetoothManager: BluetoothManager
     private lateinit var calibrationManager: CalibrationManager
+    private lateinit var statsManager: StatsManager
     private var bluetoothAdapter: BluetoothAdapter? = null
     private var locationManager: LocationManager? = null
     
@@ -93,6 +94,7 @@ class MainActivity : ComponentActivity(), LocationListener {
         // Initialize Managers
         bluetoothManager = BluetoothManager(this)
         calibrationManager = CalibrationManager(this)
+        statsManager = StatsManager(this)
         bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         
@@ -108,12 +110,14 @@ class MainActivity : ComponentActivity(), LocationListener {
                         CalibrationScreen(
                             bluetoothManager = bluetoothManager,
                             calibrationManager = calibrationManager,
+                            statsManager = statsManager,
                             onBack = { showSettings = false }
                         )
                     } else {
                         BoatDashboard(
                             bluetoothManager = bluetoothManager,
                             calibrationManager = calibrationManager,
+                            statsManager = statsManager,
                             location = _locationState.value,
                             locationPermissionGranted = _locationPermissionGranted.value,
                             onOpenSettings = { showSettings = true }
@@ -161,6 +165,7 @@ class MainActivity : ComponentActivity(), LocationListener {
 
     override fun onLocationChanged(location: Location) {
         _locationState.value = location
+        statsManager.updateOdometer(location)
     }
 
     override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
@@ -170,6 +175,7 @@ class MainActivity : ComponentActivity(), LocationListener {
     override fun onDestroy() {
         super.onDestroy()
         locationManager?.removeUpdates(this)
+        statsManager.saveAll()
     }
 }
 
@@ -177,6 +183,7 @@ class MainActivity : ComponentActivity(), LocationListener {
 fun BoatDashboard(
     bluetoothManager: BluetoothManager,
     calibrationManager: CalibrationManager,
+    statsManager: StatsManager,
     location: Location? = null,
     locationPermissionGranted: Boolean = false,
     onOpenSettings: () -> Unit = {}
@@ -185,10 +192,23 @@ fun BoatDashboard(
     val sensorData = calibrationManager.applyCalibration(rawSensorData)
     val isConnected by bluetoothManager.isConnected.collectAsState()
     val isScanning by bluetoothManager.isScanning.collectAsState()
+    
+    val engineHours by statsManager.engineHours.collectAsState()
+    val odometerMiles by statsManager.odometerMiles.collectAsState()
 
     val configuration = LocalConfiguration.current
     val isTablet = configuration.screenWidthDp >= 600
     val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+
+    // Update engine hours based on RPM
+    val currentRpms by rememberUpdatedState(sensorData.rpms)
+    LaunchedEffect(Unit) {
+        while (true) {
+            val isRunning = currentRpms > 300
+            statsManager.updateEngineHours(isRunning)
+            delay(1000)
+        }
+    }
 
     // Calculate GPS speed in MPH
     val gpsSpeedMph = if (location != null && location.hasSpeed()) {
@@ -205,6 +225,8 @@ fun BoatDashboard(
                 isScanning = isScanning,
                 location = location,
                 locationPermissionGranted = locationPermissionGranted,
+                engineHours = engineHours,
+                odometerMiles = odometerMiles,
                 onOpenSettings = onOpenSettings
             )
         }
@@ -299,6 +321,15 @@ fun BoatDashboard(
                     compact = isLandscape && isTablet
                 )
             }
+            
+            // Battery Status Card
+            item {
+                BatteryCard(
+                    battery1 = sensorData.battery1Voltage,
+                    battery2 = sensorData.battery2Voltage,
+                    compact = isLandscape && isTablet
+                )
+            }
         }
     }
 }
@@ -309,6 +340,8 @@ fun DashboardHeader(
     isScanning: Boolean,
     location: Location?,
     locationPermissionGranted: Boolean,
+    engineHours: Float,
+    odometerMiles: Float,
     onOpenSettings: () -> Unit = {}
 ) {
     val configuration = LocalConfiguration.current
@@ -353,8 +386,17 @@ fun DashboardHeader(
                     )
                 }
                 
-                Spacer(modifier = Modifier.width(24.dp))
+                Spacer(modifier = Modifier.width(if (isLandscape) 16.dp else 24.dp))
                 
+                // Stats readouts
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    StatChip(icon = Icons.Default.Timer, value = String.format("%.1f h", engineHours))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    StatChip(icon = Icons.Default.Map, value = String.format("%.1f mi", odometerMiles))
+                }
+
+                Spacer(modifier = Modifier.width(16.dp))
+
                 IconButton(onClick = onOpenSettings) {
                     Icon(
                         imageVector = Icons.Default.Settings,
@@ -369,6 +411,34 @@ fun DashboardHeader(
                 Spacer(modifier = Modifier.height(if (isLandscape) 4.dp else 8.dp))
                 LocationDisplay(location = location, permissionGranted = locationPermissionGranted)
             }
+        }
+    }
+}
+
+@Composable
+fun StatChip(icon: ImageVector, value: String) {
+    Surface(
+        color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.05f),
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp),
+                tint = MaterialTheme.colorScheme.secondary
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = value,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
         }
     }
 }
@@ -676,6 +746,52 @@ fun BilgeCard(status: String, isHigh: Boolean, compact: Boolean = false) {
     }
 }
 
+@Composable
+fun BatteryCard(battery1: Float, battery2: Float, compact: Boolean = false) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(modifier = Modifier.padding(if (compact) 12.dp else 20.dp)) {
+            Text(
+                text = "BATTERY",
+                style = if (compact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.secondary
+            )
+            Spacer(modifier = Modifier.height(if (compact) 4.dp else 12.dp))
+            
+            Column(verticalArrangement = Arrangement.spacedBy(if (compact) 2.dp else 4.dp)) {
+                BatteryRow(label = "Battery 1", voltage = battery1, compact = compact)
+                BatteryRow(label = "Battery 2", voltage = battery2, compact = compact)
+            }
+        }
+    }
+}
+
+@Composable
+fun BatteryRow(label: String, voltage: Float, compact: Boolean) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = if (compact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.secondary
+        )
+        Text(
+            text = if (voltage > 0) String.format("%.1f V", voltage) else "-- V",
+            style = if (compact) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = if (voltage > 0 && voltage < 11.5f) WarningRed else MaterialTheme.colorScheme.primary
+        )
+    }
+}
+
 @Preview(
     showBackground = true,
     widthDp = 1280,
@@ -689,7 +805,8 @@ fun BoatDashboardPreview() {
     BoatAppTheme {
         BoatDashboard(
             bluetoothManager = BluetoothManager(context),
-            calibrationManager = CalibrationManager(context)
+            calibrationManager = CalibrationManager(context),
+            statsManager = StatsManager(context)
         )
     }
 }
@@ -698,12 +815,52 @@ fun BoatDashboardPreview() {
 fun CalibrationScreen(
     bluetoothManager: BluetoothManager,
     calibrationManager: CalibrationManager,
+    statsManager: StatsManager,
     onBack: () -> Unit
 ) {
     val rawSensorData by bluetoothManager.sensorData.collectAsState()
     val settings by calibrationManager.settings.collectAsState()
+    val engineHours by statsManager.engineHours.collectAsState()
+    val odometerMiles by statsManager.odometerMiles.collectAsState()
     
+    var showResetHoursDialog by remember { mutableStateOf(false) }
+    var showResetMilesDialog by remember { mutableStateOf(false) }
+
     val calibratedData = calibrationManager.applyCalibration(rawSensorData)
+
+    if (showResetHoursDialog) {
+        AlertDialog(
+            onDismissRequest = { showResetHoursDialog = false },
+            title = { Text("Reset Engine Hours") },
+            text = { Text("Are you sure you want to reset engine hours to 0.0?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    statsManager.resetEngineHours()
+                    showResetHoursDialog = false
+                }) { Text("Reset") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetHoursDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showResetMilesDialog) {
+        AlertDialog(
+            onDismissRequest = { showResetMilesDialog = false },
+            title = { Text("Reset Odometer") },
+            text = { Text("Are you sure you want to reset odometer miles to 0.0?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    statsManager.resetOdometer()
+                    showResetMilesDialog = false
+                }) { Text("Reset") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetMilesDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -724,14 +881,14 @@ fun CalibrationScreen(
                     }
                     Spacer(modifier = Modifier.width(16.dp))
                     Text(
-                        text = "Gauge Calibration",
+                        text = "Boat Settings",
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
                     Spacer(modifier = Modifier.weight(1f))
                     TextButton(onClick = { calibrationManager.resetAll() }) {
-                        Text("Reset All")
+                        Text("Reset All Gauges")
                     }
                 }
             }
@@ -744,6 +901,46 @@ fun CalibrationScreen(
                 .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            item {
+                Text(
+                    text = "LIFETIME STATS",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    shape = RoundedCornerShape(12.dp),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(modifier = Modifier.padding(20.dp)) {
+                        ResetRow(
+                            label = "Engine Hours",
+                            value = String.format("%.1f h", engineHours),
+                            onReset = { showResetHoursDialog = true }
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                        ResetRow(
+                            label = "Odometer Miles",
+                            value = String.format("%.1f mi", odometerMiles),
+                            onReset = { showResetMilesDialog = true }
+                        )
+                    }
+                }
+            }
+
+            item {
+                Text(
+                    text = "GAUGE CALIBRATION",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)
+                )
+            }
+
             item {
                 CalibrationRow(
                     title = "Fuel Level",
@@ -804,6 +1001,28 @@ fun CalibrationScreen(
                     step = 1f
                 )
             }
+        }
+    }
+}
+
+@Composable
+fun ResetRow(label: String, value: String, onReset: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column {
+            Text(text = label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
+            Text(text = value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+        }
+        Button(
+            onClick = onReset,
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.1f), contentColor = MaterialTheme.colorScheme.error),
+            shape = RoundedCornerShape(8.dp),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+        ) {
+            Text("Reset", style = MaterialTheme.typography.labelLarge)
         }
     }
 }

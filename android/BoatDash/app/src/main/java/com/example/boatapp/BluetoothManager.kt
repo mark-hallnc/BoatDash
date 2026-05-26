@@ -137,6 +137,10 @@ class BluetoothManager(private val context: Context) {
                         "RPM" -> currentSensorData.copy(rpms = value.toIntOrNull() ?: 800)
                         "OIL" -> currentSensorData.copy(oilPressure = value.toFloatOrNull() ?: 15f)
                         "BILGE" -> currentSensorData.copy(bilgeWaterLevel = value.uppercase())
+                        "BAT1" -> currentSensorData.copy(battery1Voltage = value.toFloatOrNull() ?: 0f)
+                        "BAT2" -> currentSensorData.copy(battery2Voltage = value.toFloatOrNull() ?: 0f)
+                        "BATTERY1" -> currentSensorData.copy(battery1Voltage = value.toFloatOrNull() ?: 0f)
+                        "BATTERY2" -> currentSensorData.copy(battery2Voltage = value.toFloatOrNull() ?: 0f)
                         else -> currentSensorData
                     }
                 }
