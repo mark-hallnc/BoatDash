@@ -44,6 +44,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
 import com.example.boatapp.ui.theme.*
+import androidx.compose.animation.Crossfade
+import androidx.compose.foundation.lazy.LazyColumn
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlin.random.Random
@@ -60,6 +62,7 @@ import java.util.UUID
 
 class MainActivity : ComponentActivity(), LocationListener {
     private lateinit var bluetoothManager: BluetoothManager
+    private lateinit var calibrationManager: CalibrationManager
     private var bluetoothAdapter: BluetoothAdapter? = null
     private var locationManager: LocationManager? = null
     
@@ -89,6 +92,7 @@ class MainActivity : ComponentActivity(), LocationListener {
         
         // Initialize Managers
         bluetoothManager = BluetoothManager(this)
+        calibrationManager = CalibrationManager(this)
         bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         
@@ -97,11 +101,25 @@ class MainActivity : ComponentActivity(), LocationListener {
         
         setContent {
             BoatAppTheme {
-                BoatDashboard(
-                    bluetoothManager = bluetoothManager,
-                    location = _locationState.value,
-                    locationPermissionGranted = _locationPermissionGranted.value
-                )
+                var showSettings by remember { mutableStateOf(false) }
+
+                Crossfade(targetState = showSettings, label = "screen_transition") { settingsVisible ->
+                    if (settingsVisible) {
+                        CalibrationScreen(
+                            bluetoothManager = bluetoothManager,
+                            calibrationManager = calibrationManager,
+                            onBack = { showSettings = false }
+                        )
+                    } else {
+                        BoatDashboard(
+                            bluetoothManager = bluetoothManager,
+                            calibrationManager = calibrationManager,
+                            location = _locationState.value,
+                            locationPermissionGranted = _locationPermissionGranted.value,
+                            onOpenSettings = { showSettings = true }
+                        )
+                    }
+                }
             }
         }
     }
@@ -158,10 +176,13 @@ class MainActivity : ComponentActivity(), LocationListener {
 @Composable
 fun BoatDashboard(
     bluetoothManager: BluetoothManager,
+    calibrationManager: CalibrationManager,
     location: Location? = null,
-    locationPermissionGranted: Boolean = false
+    locationPermissionGranted: Boolean = false,
+    onOpenSettings: () -> Unit = {}
 ) {
-    val sensorData by bluetoothManager.sensorData.collectAsState()
+    val rawSensorData by bluetoothManager.sensorData.collectAsState()
+    val sensorData = calibrationManager.applyCalibration(rawSensorData)
     val isConnected by bluetoothManager.isConnected.collectAsState()
     val isScanning by bluetoothManager.isScanning.collectAsState()
 
@@ -183,7 +204,8 @@ fun BoatDashboard(
                 isConnected = isConnected,
                 isScanning = isScanning,
                 location = location,
-                locationPermissionGranted = locationPermissionGranted
+                locationPermissionGranted = locationPermissionGranted,
+                onOpenSettings = onOpenSettings
             )
         }
     ) { paddingValues ->
@@ -286,7 +308,8 @@ fun DashboardHeader(
     isConnected: Boolean,
     isScanning: Boolean,
     location: Location?,
-    locationPermissionGranted: Boolean
+    locationPermissionGranted: Boolean,
+    onOpenSettings: () -> Unit = {}
 ) {
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
@@ -306,27 +329,39 @@ fun DashboardHeader(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(if (isLandscape) 8.dp else 10.dp)
-                            .clip(CircleShape)
-                            .background(if (isConnected) SuccessGreen else WarningRed)
-                    )
-                    Spacer(modifier = Modifier.width(if (isLandscape) 6.dp else 8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(if (isLandscape) 8.dp else 10.dp)
+                                .clip(CircleShape)
+                                .background(if (isConnected) SuccessGreen else WarningRed)
+                        )
+                        Spacer(modifier = Modifier.width(if (isLandscape) 6.dp else 8.dp))
+                        Text(
+                            text = "Glastron 1900",
+                            style = if (isLandscape) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Black,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                     Text(
-                        text = "BoatDash",
-                        style = if (isLandscape) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Black,
-                        color = MaterialTheme.colorScheme.primary
+                        text = "System Monitor",
+                        style = if (isLandscape) MaterialTheme.typography.labelSmall else MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.7f)
                     )
                 }
-                Text(
-                    text = "Live boat telemetry",
-                    style = if (isLandscape) MaterialTheme.typography.labelSmall else MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.7f)
-                )
+                
+                Spacer(modifier = Modifier.width(24.dp))
+                
+                IconButton(onClick = onOpenSettings) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "Settings",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
 
             Column(horizontalAlignment = Alignment.End) {
@@ -650,9 +685,207 @@ fun BilgeCard(status: String, isHigh: Boolean, compact: Boolean = false) {
 )
 @Composable
 fun BoatDashboardPreview() {
+    val context = LocalContext.current
     BoatAppTheme {
-        BoatDashboard(bluetoothManager = BluetoothManager(LocalContext.current))
+        BoatDashboard(
+            bluetoothManager = BluetoothManager(context),
+            calibrationManager = CalibrationManager(context)
+        )
     }
 }
 
+@Composable
+fun CalibrationScreen(
+    bluetoothManager: BluetoothManager,
+    calibrationManager: CalibrationManager,
+    onBack: () -> Unit
+) {
+    val rawSensorData by bluetoothManager.sensorData.collectAsState()
+    val settings by calibrationManager.settings.collectAsState()
+    
+    val calibratedData = calibrationManager.applyCalibration(rawSensorData)
 
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier.shadow(2.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(horizontal = 24.dp, vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text(
+                        text = "Gauge Calibration",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                    TextButton(onClick = { calibrationManager.resetAll() }) {
+                        Text("Reset All")
+                    }
+                }
+            }
+        }
+    ) { paddingValues ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item {
+                CalibrationRow(
+                    title = "Fuel Level",
+                    unit = "%",
+                    rawValue = rawSensorData.fuelLevel,
+                    calibratedValue = calibratedData.fuelLevel,
+                    offset = settings.fuelLevelOffset,
+                    onOffsetChange = { calibrationManager.updateFuelLevelOffset(it) },
+                    valueRange = 0f..100f,
+                    step = 1f
+                )
+            }
+            item {
+                CalibrationRow(
+                    title = "RPM",
+                    unit = "",
+                    rawValue = rawSensorData.rpms.toFloat(),
+                    calibratedValue = calibratedData.rpms.toFloat(),
+                    offset = settings.rpmsOffset.toFloat(),
+                    onOffsetChange = { calibrationManager.updateRpmsOffset(it.toInt()) },
+                    valueRange = 0f..7000f,
+                    step = 10f
+                )
+            }
+            item {
+                CalibrationRow(
+                    title = "Oil Pressure",
+                    unit = "PSI",
+                    rawValue = rawSensorData.oilPressure,
+                    calibratedValue = calibratedData.oilPressure,
+                    offset = settings.oilPressureOffset,
+                    onOffsetChange = { calibrationManager.updateOilPressureOffset(it) },
+                    valueRange = 0f..100f,
+                    step = 1f
+                )
+            }
+            item {
+                CalibrationRow(
+                    title = "Fuel Rate",
+                    unit = "GPH",
+                    rawValue = rawSensorData.fuelConsumption,
+                    calibratedValue = calibratedData.fuelConsumption,
+                    offset = settings.fuelConsumptionOffset,
+                    onOffsetChange = { calibrationManager.updateFuelConsumptionOffset(it) },
+                    valueRange = 0f..50f,
+                    step = 0.1f
+                )
+            }
+            item {
+                CalibrationRow(
+                    title = "Trim Position",
+                    unit = "",
+                    rawValue = rawSensorData.trimPosition.toFloat(),
+                    calibratedValue = calibratedData.trimPosition.toFloat(),
+                    offset = settings.trimPositionOffset.toFloat(),
+                    onOffsetChange = { calibrationManager.updateTrimPositionOffset(it.toInt()) },
+                    valueRange = 0f..5f,
+                    step = 1f
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun CalibrationRow(
+    title: String,
+    unit: String,
+    rawValue: Float,
+    calibratedValue: Float,
+    offset: Float,
+    onOffsetChange: (Float) -> Unit,
+    valueRange: ClosedFloatingPointRange<Float>,
+    step: Float
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = title.uppercase(),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                    Text(
+                        text = "Offset: ${if (offset >= 0) "+" else ""}${String.format("%.1f", offset)} $unit",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                    )
+                }
+                
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text = "Raw: ${String.format("%.1f", rawValue)} $unit",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                        Text(
+                            text = "Calibrated: ${String.format("%.1f", calibratedValue)} $unit",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Black,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
+                    IconButton(onClick = { onOffsetChange(0f) }) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Reset", modifier = Modifier.size(20.dp))
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { onOffsetChange(offset - step) }) {
+                    Icon(Icons.Default.Remove, contentDescription = "Decrease")
+                }
+                
+                Slider(
+                    value = calibratedValue,
+                    onValueChange = { newValue ->
+                        onOffsetChange(newValue - rawValue)
+                    },
+                    valueRange = valueRange,
+                    modifier = Modifier.weight(1f)
+                )
+                
+                IconButton(onClick = { onOffsetChange(offset + step) }) {
+                    Icon(Icons.Default.Add, contentDescription = "Increase")
+                }
+            }
+        }
+    }
+}
