@@ -236,9 +236,9 @@ fun BoatDashboard(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(horizontal = 16.dp, vertical = if (isLandscape) 8.dp else 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(horizontal = 16.dp, vertical = if (isLandscape) 10.dp else 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             // Prominent Speed Card
             item(span = { GridItemSpan(if (isTablet) 2 else 1) }) {
@@ -357,7 +357,7 @@ fun DashboardHeader(
                 .statusBarsPadding()
                 .padding(
                     horizontal = if (isLandscape) 16.dp else 24.dp,
-                    vertical = if (isLandscape) 8.dp else 16.dp
+                    vertical = if (isLandscape) 10.dp else 16.dp
                 ),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
@@ -530,7 +530,7 @@ fun ProminentStatCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         shape = RoundedCornerShape(16.dp)
     ) {
-        Column(modifier = Modifier.padding(if (compact) 16.dp else 24.dp)) {
+        Column(modifier = Modifier.padding(if (compact) 20.dp else 24.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -538,7 +538,7 @@ fun ProminentStatCard(
             ) {
                 Text(
                     text = title,
-                    style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge,
+                    style = if (compact) MaterialTheme.typography.labelLarge else MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.secondary
                 )
@@ -546,11 +546,11 @@ fun ProminentStatCard(
                     imageVector = icon,
                     contentDescription = null,
                     tint = accentColor.copy(alpha = 0.6f),
-                    modifier = if (compact) Modifier.size(20.dp) else Modifier
+                    modifier = if (compact) Modifier.size(22.dp) else Modifier
                 )
             }
             
-            Spacer(modifier = Modifier.height(if (compact) 8.dp else 16.dp))
+            Spacer(modifier = Modifier.height(if (compact) 12.dp else 16.dp))
             
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(
@@ -558,7 +558,7 @@ fun ProminentStatCard(
                     style = if (compact) MaterialTheme.typography.displayMedium else MaterialTheme.typography.displayLarge,
                     fontWeight = FontWeight.Black,
                     color = accentColor,
-                    fontSize = if (compact) 48.sp else 64.sp
+                    fontSize = if (compact) 54.sp else 64.sp
                 )
                 if (unit.isNotEmpty()) {
                     Spacer(modifier = Modifier.width(if (compact) 4.dp else 8.dp))
@@ -571,7 +571,7 @@ fun ProminentStatCard(
                 }
             }
             
-            Spacer(modifier = Modifier.height(if (compact) 8.dp else 16.dp))
+            Spacer(modifier = Modifier.height(if (compact) 10.dp else 16.dp))
             
             LinearProgressIndicator(
                 progress = progress,
@@ -603,7 +603,7 @@ fun StatCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         shape = RoundedCornerShape(16.dp)
     ) {
-        Column(modifier = Modifier.padding(if (compact) 12.dp else 20.dp)) {
+        Column(modifier = Modifier.padding(if (compact) 16.dp else 20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = icon,
@@ -614,18 +614,18 @@ fun StatCard(
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = title,
-                    style = if (compact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
+                    style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.secondary
                 )
             }
             
-            Spacer(modifier = Modifier.height(if (compact) 4.dp else 12.dp))
+            Spacer(modifier = Modifier.height(if (compact) 8.dp else 12.dp))
             
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(
                     text = value,
-                    style = if (compact) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineLarge,
+                    style = if (compact) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -640,7 +640,7 @@ fun StatCard(
             }
             
             if (showProgress) {
-                Spacer(modifier = Modifier.height(if (compact) 4.dp else 12.dp))
+                Spacer(modifier = Modifier.height(if (compact) 8.dp else 12.dp))
                 LinearProgressIndicator(
                     progress = progress,
                     modifier = Modifier
@@ -663,21 +663,21 @@ fun TrimCard(trimPosition: Int, accentColor: Color, compact: Boolean = false) {
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         shape = RoundedCornerShape(16.dp)
     ) {
-        Column(modifier = Modifier.padding(if (compact) 12.dp else 20.dp)) {
+        Column(modifier = Modifier.padding(if (compact) 16.dp else 20.dp)) {
             Text(
                 text = "TRIM POSITION",
-                style = if (compact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
+                style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.secondary
             )
-            Spacer(modifier = Modifier.height(if (compact) 4.dp else 12.dp))
+            Spacer(modifier = Modifier.height(if (compact) 8.dp else 12.dp))
             Text(
                 text = "Position $trimPosition",
                 style = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = accentColor
             )
-            Spacer(modifier = Modifier.height(if (compact) 4.dp else 8.dp))
+            Spacer(modifier = Modifier.height(if (compact) 6.dp else 8.dp))
             
             // Simple visual representation of trim
             Row(
@@ -711,14 +711,14 @@ fun BilgeCard(status: String, isHigh: Boolean, compact: Boolean = false) {
         shape = RoundedCornerShape(16.dp),
         border = if (isHigh) BorderStroke(1.dp, WarningRed.copy(alpha = 0.5f)) else null
     ) {
-        Column(modifier = Modifier.padding(if (compact) 12.dp else 20.dp)) {
+        Column(modifier = Modifier.padding(if (compact) 16.dp else 20.dp)) {
             Text(
                 text = "BILGE WATER",
-                style = if (compact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
+                style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.secondary
             )
-            Spacer(modifier = Modifier.height(if (compact) 4.dp else 12.dp))
+            Spacer(modifier = Modifier.height(if (compact) 8.dp else 12.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     modifier = Modifier.size(if (compact) 8.dp else 12.dp),
@@ -754,16 +754,16 @@ fun BatteryCard(battery1: Float, battery2: Float, compact: Boolean = false) {
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         shape = RoundedCornerShape(16.dp)
     ) {
-        Column(modifier = Modifier.padding(if (compact) 12.dp else 20.dp)) {
+        Column(modifier = Modifier.padding(if (compact) 16.dp else 20.dp)) {
             Text(
                 text = "BATTERY",
-                style = if (compact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
+                style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.secondary
             )
-            Spacer(modifier = Modifier.height(if (compact) 4.dp else 12.dp))
+            Spacer(modifier = Modifier.height(if (compact) 8.dp else 12.dp))
             
-            Column(verticalArrangement = Arrangement.spacedBy(if (compact) 2.dp else 4.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 4.dp)) {
                 BatteryRow(label = "Battery 1", voltage = battery1, compact = compact)
                 BatteryRow(label = "Battery 2", voltage = battery2, compact = compact)
             }
